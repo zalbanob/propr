@@ -41,10 +41,9 @@ if (CMAKE_CUDA_COMPILER)
     set(USE_CUDA ON)
     set(CMAKE_CUDA_STANDARD 17)
     set(CMAKE_CUDA_STANDARD_REQUIRED ON)
-    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --extended-lambda  -g")
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --extended-lambda --expt-relaxed-constexpr -g")
     message("CUDA           : FOUND")
     find_package(CUDAToolkit REQUIRED)
-    #find_package(Thrust REQUIRED)
 else ()
     message("CUDA           : NOT FOUND")
 endif ()
@@ -54,6 +53,14 @@ if (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
 endif ()
 message("Install Prefix : " ${CMAKE_INSTALL_PREFIX})
 include_directories(${CMAKE_SOURCE_DIR}/inst/include)
+
+set(PROPERTIES CUDA_ARCHITECTURES 90)
+set(CMAKE_CUDA_ARCHITECTURES 90)
+set(CUTLASS_NVCC_ARCHS "90")
+
+add_subdirectory(${CMAKE_SOURCE_DIR}/thirdparty/cutlass)
+
+include_directories(${CMAKE_SOURCE_DIR}/thirdparty/cutlass/include/)
 
 option(PROPR_BUILD_TESTS "Option to enable building tests" OFF)
 
