@@ -1,5 +1,8 @@
 #include <Rcpp.h>
+
 #include <math.h>
+#include <iostream>
+
 #include <propr/kernels/cpu/dispatch/backend.hpp>
 #include <propr/utils/rcpp_checks.h>
 
@@ -34,24 +37,23 @@ centerNumericMatrix(NumericMatrix& out, NumericMatrix & in_X){
 
 void
 dispatch::cpu::corRcpp(NumericMatrix& out, NumericMatrix & X) {
-  const int m = X.ncol();
-  CHECK_MATRIX_DIMS(out, m, m);
+  const int n = X.nrow();
+  const int p = X.ncol();
+  CHECK_MATRIX_DIMS(out, p, p);
 
-  NumericMatrix X_centered;
-  centerNumericMatrix(X, X_centered);
+  NumericMatrix X_centered(n, p);          // <-- was (p, p)
+  centerNumericMatrix(X_centered, X);
 
-  NumericVector inv_sqrt_ss(m);
-  for (int i = 0; i < m; ++i) {
+  NumericVector inv_sqrt_ss(p);
+  for (int i = 0; i < p; ++i)
     inv_sqrt_ss(i) = 1 / sqrt(sum(X_centered(_, i) * X_centered(_, i)));
-  }
-  for (int i = 0; i < m; ++i) {
+
+  for (int i = 0; i < p; ++i)
     for (int j = 0; j <= i; ++j) {
       out(i, j) = sum(X_centered(_,i) * X_centered(_,j)) * inv_sqrt_ss(i) * inv_sqrt_ss(j);
       out(j, i) = out(i, j);
     }
-  }
 }
-
 void
 dispatch::cpu::covRcpp(NumericMatrix& out, NumericMatrix & X,const int norm_type) {
 
@@ -61,7 +63,7 @@ dispatch::cpu::covRcpp(NumericMatrix& out, NumericMatrix & X,const int norm_type
   const int df = n - 1 + norm_type;
 
   NumericMatrix X_centered_temp(n, m);
-  centerNumericMatrix(X, X_centered_temp);
+  centerNumericMatrix(X_centered_temp, X);
 
   for (int i = 0; i < m; ++i) {
     for (int j = 0; j <= i; ++j) {
@@ -73,7 +75,7 @@ dispatch::cpu::covRcpp(NumericMatrix& out, NumericMatrix & X,const int norm_type
 
 void
 dispatch::cpu::vlrRcpp(NumericMatrix& out, NumericMatrix & X){
-
+  // This is just a convuluted way of calculating var(l*,i - l*,j)
   int nfeats = X.ncol();
   CHECK_MATRIX_DIMS(out, nfeats, nfeats);
 
@@ -118,7 +120,7 @@ dispatch::cpu::alrRcpp(NumericMatrix& out, NumericMatrix & X,const int ivar){
   CHECK_MATRIX_DIMS(out, X.nrow(), X.ncol());
   for(int i = 0; i < X.nrow(); i++){
     for(int j = 0; j < X.ncol(); j++){
-      out(i, j) = log(X(i, j));
+      out(i, j) = log(X(i, j)); // - log(out(i, ivar - 1))
     }
     out(i, _) = out(i, _) - out(i, ivar - 1);
   }
@@ -141,13 +143,13 @@ dispatch::cpu::symRcpp(NumericMatrix& out, NumericMatrix & X) {
 
 void
 dispatch::cpu::phiRcpp(NumericMatrix& out, NumericMatrix& X, bool sym) {
-  NumericMatrix mat_tmp(X.nrow(), X.ncol());
+  NumericMatrix mat_tmp(X.ncol(), X.ncol());
   dispatch::cpu::vlrRcpp(mat_tmp, X);
 
   CHECK_MATRIX_DIMS(out, mat_tmp.nrow(), mat_tmp.ncol());
   for (int i = 0; i < mat_tmp.nrow(); ++i) {
       for (int j = 0; j < mat_tmp.ncol(); ++j) {
-          out(i, j) = mat_tmp(i, j);
+        out(i, j) = mat_tmp(i, j);
       }
   }
 
@@ -174,7 +176,7 @@ dispatch::cpu::phiRcpp(NumericMatrix& out, NumericMatrix& X, bool sym) {
 void
 dispatch::cpu::rhoRcpp(NumericMatrix& out, NumericMatrix& X, NumericMatrix& lr,int ivar){
 
-  NumericMatrix mat_tmp(X.nrow(), X.ncol());
+  NumericMatrix mat_tmp(X.ncol(), X.ncol());
   dispatch::cpu::vlrRcpp(mat_tmp, X);
 
   CHECK_MATRIX_DIMS(out, mat_tmp.nrow(), mat_tmp.ncol());
@@ -191,15 +193,16 @@ dispatch::cpu::rhoRcpp(NumericMatrix& out, NumericMatrix& X, NumericMatrix& lr,i
   for(int i = 0; i < nfeats; i++){
     vars[i] = sum(pow(lr(_, i) - mean(lr(_, i)), 2.0)) / (nsubjs - 1);
   }
+
   for(int i = 0; i < nfeats; i++){
     for(int j = 0; j < nfeats; j++){
       if(i == (ivar - 1) || j == (ivar - 1)){
         if(i == (ivar - 1) && j == (ivar - 1)){
           out(i, j) = 1;
-        }else{
+        } else {
           out(i, j) = 0;
         }
-      }else{
+      } else {
         out(i, j) = 1 - out(i, j) / (vars[i] + vars[j]);
       }
     }
@@ -249,52 +252,57 @@ void
 dispatch::cpu::indexToCoord(List& out, IntegerVector V, const int N){
   std::vector<int> rows;
   std::vector<int> cols;
+
   for(int i = 0; i < V.length(); i++){
     int J = (V[i] - 1) / N + 1;
     cols.push_back(J);
+
     int I = (V[i] - 1) % N + 1;
     rows.push_back(I);
+
   }
   out["feat1"] = Rcpp::wrap(rows);
   out["feat2"] = Rcpp::wrap(cols);
 }
 
 void
-dispatch::cpu::coordToIndex(IntegerVector& out, IntegerVector row,IntegerVector col, const int N){
+dispatch::cpu::coordToIndex(IntegerVector& out, IntegerVector row, IntegerVector col, const int N){
   CHECK_VECTOR_SIZE(out, row.length());
   if (row.length() != col.length()){
     stop("Input row and col vectors must have the same length.");
   }
+
   for (int i = 0; i < row.length(); ++i) {
       out[i] = (col[i] - 1) * N + row[i];
   }
 }
 
-void
+void 
 dispatch::cpu::linRcpp(NumericMatrix& out, NumericMatrix & rho, NumericMatrix lr){
-  int N_samples = lr.nrow();
-  CHECK_MATRIX_DIMS(out, rho.nrow(), rho.ncol());
+  if (lr.ncol() != rho.ncol()) stop("linRcpp: lr.ncol() must equal rho.ncol()");
+  if (lr.nrow() < 2) stop("linRcpp: lr must have at least 2 rows");
 
-  NumericMatrix r_tmp(lr.nrow(), lr.ncol());
+  const int p = rho.ncol();
+  const int N_samples = lr.nrow();
+  CHECK_MATRIX_DIMS(out, p, p);
+
+  NumericMatrix r_tmp(p, p);
   dispatch::cpu::corRcpp(r_tmp, lr);
 
-  for(int i = 0; i < rho.nrow(); i++){
-    for(int j = 0; j < rho.ncol(); j++){
+  for (int i = 0; i < p; ++i)
+    for (int j = 0; j < p; ++j)
       out(i,j) = r_tmp(i,j);
-    }
-  }
 
-  for(int i = 1; i < rho.nrow(); i++){
-    for(int j = 0; j < i; j++){
-      // Calculate Z and variance of Z
+  for (int i = 1; i < p; ++i)
+    for (int j = 0; j < i; ++j) {
       double var_ij = (1 - pow(r_tmp(i, j), 2)) * pow(rho(i, j), 2) /
-      (1 - pow(rho(i, j), 2)) / pow(r_tmp(i, j), 2) / (N_samples - 2);
+                      (1 - pow(rho(i, j), 2)) / pow(r_tmp(i, j), 2) / (N_samples - 2);
       double z_ij = atanh(rho(i, j));
       out(j, i) = var_ij;
       out(i, j) = z_ij;
     }
-  }
 }
+
 
 void
 dispatch::cpu::lltRcpp(NumericVector& out, NumericMatrix & X){
@@ -327,6 +335,7 @@ dispatch::cpu::urtRcpp(NumericVector& out, NumericMatrix & X){
 void
 dispatch::cpu::labRcpp(List& out, int nfeats){
   int llt = nfeats * (nfeats - 1) / 2;
+  // TODO: move list creation out of dispatch logic
   out["Partner"] = Rcpp::IntegerVector(llt);
   out["Pair"] = Rcpp::IntegerVector(llt);
 
@@ -370,6 +379,7 @@ dispatch::cpu::vector2mat(NumericMatrix& out, NumericVector X, IntegerVector i, 
   }
   CHECK_MATRIX_DIMS(out, nfeats, nfeats);
   std::memset( REAL(out), 0, sizeof(double) * out.size() );
+
   for (int counter = 0; counter < ni; counter++){
     out(i[counter]-1, j[counter]-1) = X[counter];
     out(j[counter]-1, i[counter]-1) = X[counter];
@@ -377,7 +387,6 @@ dispatch::cpu::vector2mat(NumericMatrix& out, NumericVector X, IntegerVector i, 
 }
 
 void dispatch::cpu::ratiosRcpp(NumericMatrix& out, NumericMatrix & X){
-
   int nfeats = X.ncol();
   int nsamps = X.nrow();
   int llt = nfeats * (nfeats - 1) / 2;
@@ -393,8 +402,13 @@ void dispatch::cpu::ratiosRcpp(NumericMatrix& out, NumericMatrix & X){
 
 // Function to recast results data frame as gene-gene matrix
 void
-dispatch::cpu::results2matRcpp(Rcpp::NumericMatrix& out, DataFrame& results, int n, double diagonal){
+dispatch::cpu::results2matRcpp(Rcpp::NumericMatrix& out, 
+                               DataFrame& results, 
+                               int n, 
+                               double diagonal){
   CHECK_MATRIX_DIMS(out, n, n);
+  std::memset(REAL(out), 0, sizeof(double) * out.size());
+  
   int npairs = results.nrows();
   for (int i = 0; i < npairs; i++){
     int row = int(results(i, 0)) - 1;
@@ -402,6 +416,7 @@ dispatch::cpu::results2matRcpp(Rcpp::NumericMatrix& out, DataFrame& results, int
     out(row, col) = results(i, 2);
     out(col, row) = results(i, 2);
   }
+  
   for (int i = 0; i < n; i++){
     out(i, i) = diagonal;
   }

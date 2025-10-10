@@ -2,6 +2,7 @@
 
 #include <cuda_runtime.h>
 
+#include <cub/cub.cuh>
 #include <cub/device/device_scan.cuh>
 
 #include <propr/data/types.h>
@@ -11,12 +12,6 @@ namespace propr {
     namespace detail {
         namespace cuda {
             
-            struct UInt4Sum { // should be moved out
-                __device__ __forceinline__ uint4 operator()(const uint4& a, const uint4& b) const {
-                    return make_uint4(a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w);
-                }
-            };
-
             __global__ 
             void compute_odd_ratio_init(cub::ScanTileState<uint4> tile_state,
                                         int blocks_in_grid){
@@ -30,12 +25,19 @@ namespace propr {
                             unsigned char* __restrict__ G, offset_t g_stride,
                             offset_t n, 
                             uint4 *acc) {
+                
+                struct UInt4Sum {
+                    __device__ __forceinline__ uint4 operator()(const uint4& a, const uint4& b) const {
+                        return make_uint4(a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w);
+                    }
+                };
+
                 using scan_op_t             = UInt4Sum;
                 using tile_prefix_op        = cub::TilePrefixCallbackOp<uint4, scan_op_t, cub::ScanTileState<uint4>>;
                 using device_scan_storage_t = typename tile_prefix_op::TempStorage;
 
-                using block_reduce_t        = cub::BlockReduce<uint4, BLOCK_THREADS>;
-                using block_scan_storage_t  = typename block_reduce_t::TempStorage;
+                using BlockReduce           = cub::BlockReduce<uint4, BLOCK_THREADS>;
+                using block_scan_storage_t  = typename BlockReduce::TempStorage;
                 
                 __shared__ block_scan_storage_t  block_partials;
                 __shared__ device_scan_storage_t device_partials;
@@ -72,7 +74,7 @@ namespace propr {
                 uint4 values = make_uint4(a_acc,b_acc, c_acc, d_acc);
 
                 scan_op_t scan_op{};
-                uint4 blk_acc = block_reduce_t(block_partials).Reduce(values, scan_op);
+                uint4 blk_acc = BlockReduce(block_partials).Reduce(values, scan_op);
 
                 tile_prefix_op prefix(tile_state, device_partials, scan_op);
                 const int tile_idx = prefix.GetTileIdx();

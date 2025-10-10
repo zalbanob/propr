@@ -17,7 +17,6 @@ template<> struct CastOperator<float,__half> {
 };
 
 
-
 template<> struct CastOperator<__half,double> {
     __half operator()(const double x) const { return __float2half(static_cast<float>(x)); }
 };
@@ -149,13 +148,15 @@ void copyToNumericVector(
     Rcpp::Vector<RTYPE>& h_dest,
     const size_t size
 ) {
+    using DstType = typename Rcpp::traits::storage_type<RTYPE>::type;
+    
     const size_t bytes = size * sizeof(T);
     T* h_temp = static_cast<T*>(std::malloc(bytes));
     if (!h_temp) throw std::bad_alloc();
 
     CUDA_CHECK(cudaMemcpy(h_temp, d_src, bytes, cudaMemcpyDeviceToHost));
     for (offset_t i = 0; i < size; ++i) {
-        h_dest[i] = static_cast<double>(h_temp[i]);
+        h_dest[i] = static_cast<DstType>(h_temp[i]);
     }
     std::free(h_temp);
 }
@@ -165,7 +166,6 @@ template<typename T, int RTYPE>
 T* RcppVectorToDevice(const Rcpp::Vector<RTYPE>& h_src, size_t size) {
     using SrcType = typename Rcpp::traits::storage_type<RTYPE>::type;
     CastOperator<T, typename Rcpp::Vector<RTYPE>::stored_type> CastOp;
-
     T* d_ptr     = nullptr;
     const size_t bytes = size * sizeof(T);
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void**>(&d_ptr), bytes));
@@ -175,10 +175,10 @@ T* RcppVectorToDevice(const Rcpp::Vector<RTYPE>& h_src, size_t size) {
                               bytes,
                               cudaMemcpyHostToDevice));
     } else {
-        std::vector<T> temp(size);
-        for (int i = 0; i < size; ++i) temp[i] = CastOp(h_src[i]);
-        CUDA_CHECK(cudaMemcpy(d_ptr, temp.data(), bytes,
-                              cudaMemcpyHostToDevice));
+        T* h_temp = static_cast<T*>(std::malloc(bytes));
+        for (int i = 0; i < size; ++i) h_temp[i] = static_cast<T>(h_src[i]);
+        CUDA_CHECK(cudaMemcpy(d_ptr, h_temp, bytes, cudaMemcpyHostToDevice));
+        std::free(h_temp);
     }
 
     return d_ptr;
