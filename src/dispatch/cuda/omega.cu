@@ -82,7 +82,6 @@ propr::dispatch::cuda::dof_population(NumericVector& out, const NumericMatrix& W
     dim3 block(Config::BLK_M / Config::TH_X, Config::BLK_M / Config::TH_Y);
     dim3 grid(nfeats / Config::BLK_M, nfeats / Config::BLK_M);
 
-    // std::cout << "fpt<<<(" << grid.x << "," << grid.y << ")" <<",(" << block.x << "," << block.y << ")>>>" << std::endl;
     omega_kernel<Config><<<grid, block, 0, context.stream>>>(d_W, d_out, nfeats, samples);
     CUDA_CHECK(cudaStreamSynchronize(context.stream));
 
