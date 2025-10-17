@@ -9,6 +9,7 @@
 
 #include <propr/data/types.h>
 
+#include <propr/kernels/cuda/traits/backend.cuh>
 #include <propr/kernels/cuda/dispatch/backend.cuh>
 #include <propr/kernels/cuda/detail/backend.cuh>
 
@@ -102,7 +103,7 @@ centerNumericMatrix(NumericMatrix& out, const NumericMatrix & X, propr_context c
 void 
 dispatch::cuda::corRcpp(NumericMatrix& out, const NumericMatrix & X, propr_context context) {
   CHECK_MATRIX_DIMS(out, X.ncol(), X.ncol());
-  using Config = propr::detail::cuda::cor_config;
+  using Config = propr::cuda::traits::cor_config;
   int nfeats  = X.ncol();
   int samples = X.nrow();
 
@@ -143,7 +144,7 @@ dispatch::cuda::corRcpp(NumericMatrix& out, const NumericMatrix & X, propr_conte
 void 
 dispatch::cuda::covRcpp(NumericMatrix& out, const NumericMatrix & X, const int norm_type, propr_context context) {
   CHECK_MATRIX_DIMS(out, X.ncol(), X.ncol());
-  using Config = propr::detail::cuda::cov_config;
+  using Config = propr::cuda::traits::cov_config;
   int nfeats  = X.ncol();
   int samples = X.nrow();
 
@@ -277,7 +278,7 @@ dispatch::cuda::alrRcpp(NumericMatrix& out, const NumericMatrix & X, const int i
 
 void 
 dispatch::cuda::symRcpp(NumericMatrix& out, const NumericMatrix & X, propr_context context) {
-  using Config = propr::detail::cuda::sym_config;
+  using Config = propr::cuda::traits::sym_config;
   CHECK_MATRIX_DIMS(out, X.nrow(), X.ncol());
   int nrow = X.nrow();
   int ncol = X.ncol(); 
@@ -316,7 +317,7 @@ dispatch::cuda::symRcpp(NumericMatrix& out, const NumericMatrix & X, propr_conte
 void 
 dispatch::cuda::vlrRcpp(NumericMatrix& out, const NumericMatrix & X, propr_context context){
   CHECK_MATRIX_DIMS(out, X.ncol(), X.ncol());
-  using Config = propr::detail::cuda::cov_config;
+  using Config = propr::cuda::traits::vlr_config;
   int nfeats  = X.ncol();
   int samples = X.nrow();
 
@@ -356,13 +357,13 @@ dispatch::cuda::vlrRcpp(NumericMatrix& out, const NumericMatrix & X, propr_conte
 
 void 
 dispatch::cuda::phiRcpp(NumericMatrix& out, NumericMatrix &X, const bool sym, propr_context context) {
-    using Config = propr::detail::cuda::cov_config;
+    using Config = propr::cuda::traits::phi_config;
     CHECK_MATRIX_DIMS(out, X.ncol(), X.ncol());
     int nfeats  = X.ncol(); 
     int samples = X.nrow();
 
     size_t N = static_cast<size_t>(nfeats);
-    size_t M = static_cast<size_t>(samples);
+    //size_t M = static_cast<size_t>(samples);
 
     offset_t X_stride; 
     auto *d_X = RcppMatrixToDevice<float>(X, X_stride);
@@ -422,7 +423,7 @@ dispatch::cuda::phiRcpp(NumericMatrix& out, NumericMatrix &X, const bool sym, pr
 }
 
 void dispatch::cuda::rhoRcpp(NumericMatrix& out, const NumericMatrix &X, const NumericMatrix &lr, const int ivar, propr_context context){
-    using Config = propr::detail::cuda::rho_config;
+    using Config = propr::cuda::traits::rho_config;
     size_t nfeats  = lr.ncol();
     size_t samples = lr.nrow();
 
@@ -589,7 +590,7 @@ void
 dispatch::cuda::linRcpp(NumericMatrix& out, const NumericMatrix & rho, const NumericMatrix &lr, propr_context context){
     // CHECK_MATRIX_DIMS(out, rho.ncol(), rho.ncol());
 
-    using Config = propr::detail::cuda::cov_config;
+    using Config = propr::cuda::traits::lin_config;
     size_t nfeats  = lr.ncol();
     size_t samples = lr.nrow();
 

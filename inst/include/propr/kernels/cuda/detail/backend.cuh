@@ -24,35 +24,9 @@ namespace propr {
     namespace detail {
         namespace cuda {
 
-            struct cov_config { // TODO: move into trait like system
-                const static int BLK_M = 128;
-                const static int BLK_K = 8;
-                const static int TH_Y  = 8;
-                const static int TH_X  = 8;
-            };
-
-            struct cor_config { // TODO: move into trait like system
-                const static int BLK_M = 128;
-                const static int BLK_K = 8;
-                const static int TH_Y  = 8;
-                const static int TH_X  = 8;
-            };
-
-            struct rho_config { // TODO: move into trait like system
-                const static int BLK_M = 128;
-                const static int BLK_K = 8;
-                const static int TH_Y  = 8;
-                const static int TH_X  = 8;
-            };
-
-            struct sym_config {
-                const static int TILE  = 32; // tile has to be integral multiple of BLK_N
-                const static int BLK_N = 16;
-            };
-
-
             template<int BLK_X>
             __global__
+            __launch_bounds__(BLK_X, 1)
             void wtm(float * out,
                      float * __restrict__ x, 
                      float * __restrict__ w,
@@ -85,6 +59,7 @@ namespace propr {
 
             template<int BLK_X>
             __global__
+            __launch_bounds__(BLK_X, 1)
             void wtv(float * out,
                      float * __restrict__ x, 
                      float * __restrict__ w,
@@ -151,6 +126,7 @@ namespace propr {
 
             template<int BLK_X, int BLK_Y=1, bool row_major=false>
             __global__
+            __launch_bounds__(BLK_X, BLK_Y)
             void col_means(
                      float * __restrict__ out, offset_t out_stride,
                      float * __restrict__   x, offset_t x_stride,
@@ -336,7 +312,9 @@ namespace propr {
 
 
             template <class Config>
-            __global__ void corRcpp(
+            __global__ 
+            __launch_bounds__(Config::BLK_M / Config::TH_X, Config::BLK_M / Config::TH_Y)
+            void corRcpp(
                 float* __restrict__ out,
                 offset_t out_stride,
                 const float* __restrict__ x,
@@ -627,7 +605,10 @@ namespace propr {
             
 
             template <class Config>
-            __global__ void covRcpp(
+            __global__ 
+            __launch_bounds__(Config::BLK_M / Config::TH_X, Config::BLK_M / Config::TH_Y)
+            void 
+            covRcpp(
                 const int norm_type,
                 float* __restrict__ out,
                 offset_t out_stride,
@@ -1011,6 +992,7 @@ namespace propr {
             
             template <class Config>
             __global__
+            __launch_bounds__(Config::TILE, Config::BLK_N)
             void symRcpp(      float* __restrict__ out, offset_t out_stride,
                          const float* __restrict__   x, offset_t x_stride,
                          int rows, int cols){
@@ -1033,6 +1015,7 @@ namespace propr {
 
             template <class Config>
             __global__
+            __launch_bounds__(Config::BLK_M / Config::TH_X, Config::BLK_M / Config::TH_Y)
             void phiRcpp(const bool sym,
                         float* __restrict__ out, offset_t out_stride,
                         const float* __restrict__   x, offset_t x_stride,
@@ -1245,9 +1228,9 @@ namespace propr {
                 const int c0 = Config::BLK_M * bx + c_block_col;
 
                 const float inv_denom = (K > 1 ? 1.0f / (float)(K - 1) : 1.0f);
-                #pragma unroll
+                PROPR_UNROLL
                 for (int yy = 0; yy < Config::TH_Y; ++yy) {
-                    #pragma unroll
+                    PROPR_UNROLL
                     for (int xx = 0; xx < Config::TH_X; ++xx) {
                         S[yy][xx] *= inv_denom;
                     }
@@ -1340,10 +1323,11 @@ namespace propr {
 
 
             template <class Config>
-            __global__ void
-            vlrRcpp(      float* __restrict__ out, offset_t out_stride,
-                    const float* __restrict__   x, offset_t   x_stride,
-                    int rows, int cols)
+            __global__ 
+            __launch_bounds__(Config::BLK_M / Config::TH_X, Config::BLK_M / Config::TH_Y)
+            void vlrRcpp(float* __restrict__ out, offset_t out_stride,
+                         const float* __restrict__   x, offset_t   x_stride,
+                         int rows, int cols)
             {
                 const int M = rows;
                 const int K = cols;
@@ -1602,7 +1586,7 @@ namespace propr {
 
                 const float* A = x;
                 const float* B = x;
-                    float* C = out;
+                      float* C = out;
 
                 const int bx = blockIdx.x;
                 const int by = blockIdx.y;
@@ -1896,7 +1880,9 @@ namespace propr {
 
             template <class Config>
             __global__
-            void linRcpp(float* __restrict__ out, offset_t out_stride,
+            __launch_bounds__(Config::BLK_M / Config::TH_X, Config::BLK_M / Config::TH_Y)
+            void 
+            linRcpp(float* __restrict__ out, offset_t out_stride,
                          const float* __restrict__ rho, int rho_stride,
                          const float* __restrict__ x, offset_t x_stride,
                          int rows, int cols){

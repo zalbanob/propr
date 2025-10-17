@@ -37,7 +37,7 @@ propd <- function(counts,
                   weighted = FALSE,
                   weights = as.matrix(NA),
                   shrink = FALSE) {
-  nvtxR::nvtx_push_range("propd", 0)
+  NVTX_PUSH("propd", 0)
   ##############################################################################
   ### CLEAN UP ARGS
   ##############################################################################
@@ -74,9 +74,9 @@ propd <- function(counts,
   ##############################################################################
 
   if (is.na(alpha)) {
-    nvtxR::nvtx_push_range("simple_zero_replacement", 1)
+    NVTX_PUSH("simple_zero_replacement", 1)
     ct <- simple_zero_replacement(counts)
-    nvtxR::nvtx_pop_range()
+    NVTX_POP()
   } else{
     ct <- counts
   }
@@ -99,7 +99,7 @@ propd <- function(counts,
   ##############################################################################
 
   # Initialize @results
-  nvtxR::nvtx_push_range("calculate_theta", 1)
+  NVTX_PUSH("calculate_theta", 1)
   result@results <- calculate_theta(
     result@counts,
     result@group,
@@ -108,20 +108,20 @@ propd <- function(counts,
     weights = weights,
     shrink = shrink
   )
-  nvtxR::nvtx_pop_range()
+  NVTX_POP()
     
-  nvtxR::nvtx_push_range("ctzRcpp", 1)
+  NVTX_PUSH("ctzRcpp", 1)
   result@results$Zeros <- ctzRcpp(counts) # count number of zeros
-  nvtxR::nvtx_pop_range()
+  NVTX_POP()
 
   result@results$theta <-round(result@results$theta, 14) # round floats to 1
   
 
   # permute data
   if (p > 0) {
-      nvtxR::nvtx_push_range("updatePermutes", 1)
+      NVTX_PUSH("updatePermutes", 1)
       result <- updatePermutes(result, p)
-      nvtxR::nvtx_pop_range()
+      NVTX_POP()
   }
 
   ##############################################################################
@@ -131,6 +131,6 @@ propd <- function(counts,
   message("Alert: Use 'setActive' to select a theta type.")
   message("Alert: Use 'updateCutoffs' to calculate FDR.")
   message("Alert: Use 'updateF' to calculate F-stat.")
-  nvtxR::nvtx_pop_range()
+  NVTX_POP()
   return(result)
 }
