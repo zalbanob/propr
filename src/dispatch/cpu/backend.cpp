@@ -54,6 +54,7 @@ dispatch::cpu::corRcpp(NumericMatrix& out, NumericMatrix & X) {
       out(j, i) = out(i, j);
     }
 }
+
 void
 dispatch::cpu::covRcpp(NumericMatrix& out, NumericMatrix & X,const int norm_type) {
 
