@@ -195,9 +195,12 @@ dispatch::cuda::clrRcpp(NumericMatrix& out, const NumericMatrix & X, propr_conte
     offset_t d_x_stride;
     auto *d_x = RcppMatrixToDevice<float, REALSXP>(X, d_x_stride);
 
-    int block = 256;
-    int grid  = (cols + block - 1) / block;
-    propr::detail::cuda::clrRcpp<256><<<grid, block, 0, context.stream>>>(
+    constexpr int BLK_X = 128;
+    constexpr int BLK_Y = 4;
+    int block = BLK_X * BLK_Y;
+    int grid  = (rows + BLK_Y - 1) / BLK_Y;
+
+    propr::detail::cuda::clrRcpp<BLK_X, BLK_Y, false><<<grid, block, 0, context.stream>>>(
         d_out, d_out_stride, d_x, d_x_stride, rows, cols
     );
     CUDA_CHECK(cudaStreamSynchronize(context.stream));
@@ -292,12 +295,9 @@ dispatch::cuda::symRcpp(NumericMatrix& out, const NumericMatrix & X, propr_conte
   dim3 block(Config::TILE, Config::BLK_N);
   dim3 grid((nrow + Config::TILE - 1) / Config::TILE,
             (ncol + Config::TILE - 1) / Config::TILE);
-            
-  propr::detail::cuda::symRcpp<Config>
-        <<<grid, block, 0, context.stream>>>(d_out, dout_stride,
-                                             d_X, X_stride,
-                                            nrow, ncol);
+  propr::detail::cuda::symRcpp<Config><<<grid, block, 0, context.stream>>>(d_out, dout_stride, d_X, X_stride, nrow, ncol);
   CUDA_CHECK(cudaStreamSynchronize(context.stream));
+  CUDA_CHECK(cudaPeekAtLastError());
   auto h_full = new float[nrow * ncol ];
   CUDA_CHECK(cudaMemcpy(h_full, d_out, nrow * ncol * sizeof(float), cudaMemcpyDeviceToHost));
   double *outptr = REAL(out);
