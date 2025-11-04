@@ -8,7 +8,10 @@
 #include <propr/data/types.h>
 #include <propr/utils/constants.h>
 #include <propr/utils/preprocessor.cuh>
+#include <propr/internal/device/cuda/thread/mem_ops.cuh>
 
+
+using namespace propr::cuda::internal;
 
 // we almost certainly will have problem with occupancy here 
 // as the number of registers used per thread is rather quite high
@@ -421,10 +424,10 @@ namespace propr {
                 }
                 __syncthreads();
 
-                FETCH_FLOAT4(frag_a[0][0]) = FETCH_FLOAT4(As[0][0][a_tile_index]);
-                FETCH_FLOAT4(frag_a[0][4]) = FETCH_FLOAT4(As[0][0][a_tile_index + 64]);
-                FETCH_FLOAT4(frag_b[0][0]) = FETCH_FLOAT4(Bs[0][0][b_tile_index]);
-                FETCH_FLOAT4(frag_b[0][4]) = FETCH_FLOAT4(Bs[0][0][b_tile_index + 64]);
+                thread::store<Config::StoreModifer,float4>(&frag_a[0][0], thread::load<Config::LoadModifer,float4>(&As[0][0][a_tile_index]));
+                thread::store<Config::StoreModifer,float4>(&frag_a[0][4], thread::load<Config::LoadModifer,float4>(&As[0][0][a_tile_index + 64]));
+                thread::store<Config::StoreModifer,float4>(&frag_b[0][0], thread::load<Config::LoadModifer,float4>(&Bs[0][0][b_tile_index]));
+                thread::store<Config::StoreModifer,float4>(&frag_b[0][4], thread::load<Config::LoadModifer,float4>(&Bs[0][0][b_tile_index + 64]));
 
                 int write_stage_idx = 1;
                 int tile_idx = 0;
@@ -465,11 +468,11 @@ namespace propr {
 
                     PROPR_UNROLL
                     for (int j = 0; j < j_max; ++j) {
-                        FETCH_FLOAT4(frag_a[(j + 1) & 1][0]) = FETCH_FLOAT4(As[load_stage_idx][(j + 1)][a_tile_index]);
-                        FETCH_FLOAT4(frag_a[(j + 1) & 1][4]) = FETCH_FLOAT4(As[load_stage_idx][(j + 1)][a_tile_index + 64]);
+                        thread::store<Config::StoreModifer,float4>(&frag_a[(j + 1) & 1][0], thread::load<Config::LoadModifer,float4>(&As[load_stage_idx][(j + 1)][a_tile_index]));
+                        thread::store<Config::StoreModifer,float4>(&frag_a[(j + 1) & 1][4], thread::load<Config::LoadModifer,float4>(&As[load_stage_idx][(j + 1)][a_tile_index + 64]));
 
-                        FETCH_FLOAT4(frag_b[(j + 1) & 1][0]) = FETCH_FLOAT4(Bs[load_stage_idx][(j + 1)][b_tile_index]);
-                        FETCH_FLOAT4(frag_b[(j + 1) & 1][4]) = FETCH_FLOAT4(Bs[load_stage_idx][(j + 1)][b_tile_index + 64]);
+                        thread::store<Config::StoreModifer,float4>(&frag_b[(j + 1) & 1][0], thread::load<Config::LoadModifer,float4>(&Bs[load_stage_idx][(j + 1)][b_tile_index]));
+                        thread::store<Config::StoreModifer,float4>(&frag_b[(j + 1) & 1][4], thread::load<Config::LoadModifer,float4>(&Bs[load_stage_idx][(j + 1)][b_tile_index + 64]));
 
                         const float n = float(tile_base + (j + 1));
 
@@ -514,7 +517,7 @@ namespace propr {
                         for (int i = 0; i < Config::BLK_K; i += B_TILE_ROW_STRIDE) {
                             const int l = (i / B_TILE_ROW_STRIDE) * 4;
                             const int row_k = B_TILE_ROW_START + i;
-                            FETCH_FLOAT4(Bs[write_stage_idx][row_k][B_TILE_COL]) = FETCH_FLOAT4(ldg_b_reg[l]);
+                            thread::store<Config::StoreModifer,float4>(&Bs[write_stage_idx][row_k][B_TILE_COL], thread::load<Config::LoadModifer,float4>(&ldg_b_reg[l]));
                         }
                         __syncthreads();
                         write_stage_idx ^= 1;
@@ -550,10 +553,10 @@ namespace propr {
                     }
 
                     if (tile_idx < K) {
-                        FETCH_FLOAT4(frag_a[0][0]) = FETCH_FLOAT4(As[(write_stage_idx ^ 1)][0][a_tile_index]);
-                        FETCH_FLOAT4(frag_a[0][4]) = FETCH_FLOAT4(As[(write_stage_idx ^ 1)][0][a_tile_index + 64]);
-                        FETCH_FLOAT4(frag_b[0][0]) = FETCH_FLOAT4(Bs[(write_stage_idx ^ 1)][0][b_tile_index]);
-                        FETCH_FLOAT4(frag_b[0][4]) = FETCH_FLOAT4(Bs[(write_stage_idx ^ 1)][0][b_tile_index + 64]);
+                        thread::store<Config::StoreModifer,float4>(&frag_a[0][0], thread::load<Config::LoadModifer,float4>(&As[(write_stage_idx ^ 1)][0][a_tile_index]));
+                        thread::store<Config::StoreModifer,float4>(&frag_a[0][4], thread::load<Config::LoadModifer,float4>(&As[(write_stage_idx ^ 1)][0][a_tile_index + 64]));
+                        thread::store<Config::StoreModifer,float4>(&frag_b[0][0], thread::load<Config::LoadModifer,float4>(&Bs[(write_stage_idx ^ 1)][0][b_tile_index]));
+                        thread::store<Config::StoreModifer,float4>(&frag_b[0][4], thread::load<Config::LoadModifer,float4>(&Bs[(write_stage_idx ^ 1)][0][b_tile_index + 64]));
                     }
                 } while (tile_idx < K);
 
@@ -576,7 +579,6 @@ namespace propr {
                 // Helper to compute r(i,j) with clamping
                 auto corr_val = [&](int i, int j) -> float {
                     float r = accum[i][j] * invsig_a[i] * invsig_b[j];
-                    //r = fmaxf(-1.0f, fminf(1.0f, r)); // Clamp tiny FP drift outside [-1,1]
                     return r;
                 };
 
@@ -708,10 +710,10 @@ namespace propr {
 
                 __syncthreads();
 
-                FETCH_FLOAT4(frag_a[0][0]) = FETCH_FLOAT4(As[0][0][a_tile_index]);
-                FETCH_FLOAT4(frag_a[0][4]) = FETCH_FLOAT4(As[0][0][a_tile_index + 64]);
-                FETCH_FLOAT4(frag_b[0][0]) = FETCH_FLOAT4(Bs[0][0][b_tile_index]);
-                FETCH_FLOAT4(frag_b[0][4]) = FETCH_FLOAT4(Bs[0][0][b_tile_index + 64]);
+                thread::store<Config::StoreModifer,float4>(&frag_a[0][0], thread::load<Config::LoadModifer,float4>(&As[0][0][a_tile_index]));
+                thread::store<Config::StoreModifer,float4>(&frag_a[0][4], thread::load<Config::LoadModifer,float4>(&As[0][0][a_tile_index + 64]));
+                thread::store<Config::StoreModifer,float4>(&frag_b[0][0], thread::load<Config::LoadModifer,float4>(&Bs[0][0][b_tile_index]));
+                thread::store<Config::StoreModifer,float4>(&frag_b[0][4], thread::load<Config::LoadModifer,float4>(&Bs[0][0][b_tile_index + 64]));
 
                 int write_stage_idx = 1;
                 int tile_idx = 0;
@@ -752,10 +754,10 @@ namespace propr {
 
                     PROPR_UNROLL
                     for (int j = 0; j < j_max; ++j) {
-                        FETCH_FLOAT4(frag_a[(j + 1) & 1][0]) = FETCH_FLOAT4(As[load_stage_idx][(j + 1)][a_tile_index]);
-                        FETCH_FLOAT4(frag_a[(j + 1) & 1][4]) = FETCH_FLOAT4(As[load_stage_idx][(j + 1)][a_tile_index + 64]);
-                        FETCH_FLOAT4(frag_b[(j + 1) & 1][0]) = FETCH_FLOAT4(Bs[load_stage_idx][(j + 1)][b_tile_index]);
-                        FETCH_FLOAT4(frag_b[(j + 1) & 1][4]) = FETCH_FLOAT4(Bs[load_stage_idx][(j + 1)][b_tile_index + 64]);
+                        thread::store<Config::StoreModifer,float4>(&frag_a[(j + 1) & 1][0], thread::load<Config::LoadModifer,float4>(&As[load_stage_idx][(j + 1)][a_tile_index]));
+                        thread::store<Config::StoreModifer,float4>(&frag_a[(j + 1) & 1][4], thread::load<Config::LoadModifer,float4>(&As[load_stage_idx][(j + 1)][a_tile_index + 64]));
+                        thread::store<Config::StoreModifer,float4>(&frag_b[(j + 1) & 1][0], thread::load<Config::LoadModifer,float4>(&Bs[load_stage_idx][(j + 1)][b_tile_index]));
+                        thread::store<Config::StoreModifer,float4>(&frag_b[(j + 1) & 1][4], thread::load<Config::LoadModifer,float4>(&Bs[load_stage_idx][(j + 1)][b_tile_index + 64]));
 
                         const float n = float(tile_base + (j + 1));
 
@@ -797,7 +799,7 @@ namespace propr {
                             const int l = (i / B_TILE_ROW_STRIDE) * 4;
                             const int row_k = B_TILE_ROW_START + i;
 
-                            FETCH_FLOAT4(Bs[write_stage_idx][row_k][B_TILE_COL]) = FETCH_FLOAT4(ldg_b_reg[l]);
+                            thread::store<Config::StoreModifer,float4>(&Bs[write_stage_idx][row_k][B_TILE_COL], thread::load<Config::LoadModifer,float4>(&ldg_b_reg[l]));
                         }
 
                         __syncthreads();
@@ -830,10 +832,10 @@ namespace propr {
                     }
 
                     if (tile_idx < K) {
-                        FETCH_FLOAT4(frag_a[0][0]) = FETCH_FLOAT4(As[(write_stage_idx ^ 1)][0][a_tile_index]);
-                        FETCH_FLOAT4(frag_a[0][4]) = FETCH_FLOAT4(As[(write_stage_idx ^ 1)][0][a_tile_index + 64]);
-                        FETCH_FLOAT4(frag_b[0][0]) = FETCH_FLOAT4(Bs[(write_stage_idx ^ 1)][0][b_tile_index]);
-                        FETCH_FLOAT4(frag_b[0][4]) = FETCH_FLOAT4(Bs[(write_stage_idx ^ 1)][0][b_tile_index + 64]);
+                        thread::store<Config::StoreModifer,float4>(&frag_a[0][0], thread::load<Config::LoadModifer,float4>(&As[(write_stage_idx ^ 1)][0][a_tile_index]));
+                        thread::store<Config::StoreModifer,float4>(&frag_a[0][4], thread::load<Config::LoadModifer,float4>(&As[(write_stage_idx ^ 1)][0][a_tile_index + 64]));
+                        thread::store<Config::StoreModifer,float4>(&frag_b[0][0], thread::load<Config::LoadModifer,float4>(&Bs[(write_stage_idx ^ 1)][0][b_tile_index]));
+                        thread::store<Config::StoreModifer,float4>(&frag_b[0][4], thread::load<Config::LoadModifer,float4>(&Bs[(write_stage_idx ^ 1)][0][b_tile_index + 64]));
                     }
 
                 } while (tile_idx < K);
@@ -1088,11 +1090,11 @@ namespace propr {
                 }
                 __syncthreads();
 
-                FETCH_FLOAT4(frag_a[0][0]) = FETCH_FLOAT4(As[0][0][a_tile_index]);
-                FETCH_FLOAT4(frag_a[0][4]) = FETCH_FLOAT4(As[0][0][a_tile_index + 64]);
+                thread::store<Config::StoreModifer,float4>(&frag_a[0][0], thread::load<Config::LoadModifer,float4>(&As[0][0][a_tile_index]));
+                thread::store<Config::StoreModifer,float4>(&frag_a[0][4], thread::load<Config::LoadModifer,float4>(&As[0][0][a_tile_index + 64]));
 
-                FETCH_FLOAT4(frag_b[0][0]) = FETCH_FLOAT4(Bs[0][0][b_tile_index]);
-                FETCH_FLOAT4(frag_b[0][4]) = FETCH_FLOAT4(Bs[0][0][b_tile_index + 64]);
+                thread::store<Config::StoreModifer,float4>(&frag_b[0][0], thread::load<Config::LoadModifer,float4>(&Bs[0][0][b_tile_index]));
+                thread::store<Config::StoreModifer,float4>(&frag_b[0][4], thread::load<Config::LoadModifer,float4>(&Bs[0][0][b_tile_index + 64]));
 
                 int write_stage_idx = 1;
                 int tile_idx = 0;
@@ -1132,11 +1134,11 @@ namespace propr {
 
                     PROPR_UNROLL
                     for (int j = 0; j < j_max; ++j) {
-                        FETCH_FLOAT4(frag_a[(j + 1) & 1][0]) = FETCH_FLOAT4(As[load_stage_idx][(j + 1)][a_tile_index]);
-                        FETCH_FLOAT4(frag_a[(j + 1) & 1][4]) = FETCH_FLOAT4(As[load_stage_idx][(j + 1)][a_tile_index + 64]);
+                        thread::store<Config::StoreModifer,float4>(&frag_a[(j + 1) & 1][0], thread::load<Config::LoadModifer,float4>(&As[load_stage_idx][(j + 1)][a_tile_index]));
+                        thread::store<Config::StoreModifer,float4>(&frag_a[(j + 1) & 1][4], thread::load<Config::LoadModifer,float4>(&As[load_stage_idx][(j + 1)][a_tile_index + 64]));
 
-                        FETCH_FLOAT4(frag_b[(j + 1) & 1][0]) = FETCH_FLOAT4(Bs[load_stage_idx][(j + 1)][b_tile_index]);
-                        FETCH_FLOAT4(frag_b[(j + 1) & 1][4]) = FETCH_FLOAT4(Bs[load_stage_idx][(j + 1)][b_tile_index + 64]);
+                        thread::store<Config::StoreModifer,float4>(&frag_b[(j + 1) & 1][0], thread::load<Config::LoadModifer,float4>(&Bs[load_stage_idx][(j + 1)][b_tile_index]));
+                        thread::store<Config::StoreModifer,float4>(&frag_b[(j + 1) & 1][4], thread::load<Config::LoadModifer,float4>(&Bs[load_stage_idx][(j + 1)][b_tile_index + 64]));
 
                         const int k_cur = tile_base + (j + 1);
 
@@ -1171,7 +1173,7 @@ namespace propr {
                         for (int i = 0; i < Config::BLK_K; i += B_TILE_ROW_STRIDE) {
                             const int l     = (i / B_TILE_ROW_STRIDE) * 4;
                             const int row_k = B_TILE_ROW_START + i;
-                            FETCH_FLOAT4(Bs[write_stage_idx][row_k][B_TILE_COL]) = FETCH_FLOAT4(ldg_b_reg[l]);
+                            thread::store<Config::StoreModifer,float4>(&Bs[write_stage_idx][row_k][B_TILE_COL], thread::load<Config::LoadModifer,float4>(&ldg_b_reg[l]));
                         }
                         __syncthreads();
                         write_stage_idx ^= 1;
@@ -1197,11 +1199,11 @@ namespace propr {
                     }
 
                     if (tile_idx < K) {
-                        FETCH_FLOAT4(frag_a[0][0]) = FETCH_FLOAT4(As[(write_stage_idx ^ 1)][0][a_tile_index]);
-                        FETCH_FLOAT4(frag_a[0][4]) = FETCH_FLOAT4(As[(write_stage_idx ^ 1)][0][a_tile_index + 64]);
+                        thread::store<Config::StoreModifer,float4>(&frag_a[0][0], thread::load<Config::LoadModifer,float4>(&As[(write_stage_idx ^ 1)][0][a_tile_index]));
+                        thread::store<Config::StoreModifer,float4>(&frag_a[0][4], thread::load<Config::LoadModifer,float4>(&As[(write_stage_idx ^ 1)][0][a_tile_index + 64]));
 
-                        FETCH_FLOAT4(frag_b[0][0]) = FETCH_FLOAT4(Bs[(write_stage_idx ^ 1)][0][b_tile_index]);
-                        FETCH_FLOAT4(frag_b[0][4]) = FETCH_FLOAT4(Bs[(write_stage_idx ^ 1)][0][b_tile_index + 64]);
+                        thread::store<Config::StoreModifer,float4>(&frag_b[0][0], thread::load<Config::LoadModifer,float4>(&Bs[(write_stage_idx ^ 1)][0][b_tile_index]));
+                        thread::store<Config::StoreModifer,float4>(&frag_b[0][4], thread::load<Config::LoadModifer,float4>(&Bs[(write_stage_idx ^ 1)][0][b_tile_index + 64]));
                     }
                 } while (tile_idx < K);
 
@@ -1313,7 +1315,7 @@ namespace propr {
                          const float* __restrict__   x, offset_t   x_stride,
                          int rows, int cols)
             {
-                static_assert((Config::BLK_K % 4)             == 0, "Config::BLK_K must be multiple of 4 (float4 gmem loads).");
+                static_assert((Config::BLK_K % 4)            == 0, "Config::BLK_K must be multiple of 4 (float4 gmem loads).");
                 static_assert((Config::BLK_M % Config::TH_Y) == 0, "Config::BLK_M % Config::TH_Y == 0");
                 static_assert((Config::BLK_M % Config::TH_X) == 0, "Config::BLK_M % Config::TH_X == 0");
 
@@ -1401,11 +1403,11 @@ namespace propr {
                 }
                 __syncthreads();
 
-                FETCH_FLOAT4(frag_a[0][0]) = FETCH_FLOAT4(As[0][0][a_tile_index]);
-                FETCH_FLOAT4(frag_a[0][4]) = FETCH_FLOAT4(As[0][0][a_tile_index + 64]);
+                thread::store<Config::StoreModifer,float4>(&frag_a[0][0], thread::load<Config::LoadModifer,float4>(&As[0][0][a_tile_index]));
+                thread::store<Config::StoreModifer,float4>(&frag_a[0][4], thread::load<Config::LoadModifer,float4>(&As[0][0][a_tile_index + 64]));
 
-                FETCH_FLOAT4(frag_b[0][0]) = FETCH_FLOAT4(Bs[0][0][b_tile_index]);
-                FETCH_FLOAT4(frag_b[0][4]) = FETCH_FLOAT4(Bs[0][0][b_tile_index + 64]);
+                thread::store<Config::StoreModifer,float4>(&frag_b[0][0], thread::load<Config::LoadModifer,float4>(&Bs[0][0][b_tile_index]));
+                thread::store<Config::StoreModifer,float4>(&frag_b[0][4], thread::load<Config::LoadModifer,float4>(&Bs[0][0][b_tile_index + 64]));
 
                 int write_stage_idx = 1;
                 int tile_idx = 0;
@@ -1445,11 +1447,11 @@ namespace propr {
 
                     PROPR_UNROLL
                     for (int j = 0; j < j_max; ++j) {
-                        FETCH_FLOAT4(frag_a[(j + 1) & 1][0]) = FETCH_FLOAT4(As[load_stage_idx][(j + 1)][a_tile_index]);
-                        FETCH_FLOAT4(frag_a[(j + 1) & 1][4]) = FETCH_FLOAT4(As[load_stage_idx][(j + 1)][a_tile_index + 64]);
+                        thread::store<Config::StoreModifer,float4>(&frag_a[(j + 1) & 1][0], thread::load<Config::LoadModifer,float4>(&As[load_stage_idx][(j + 1)][a_tile_index]));
+                        thread::store<Config::StoreModifer,float4>(&frag_a[(j + 1) & 1][4], thread::load<Config::LoadModifer,float4>(&As[load_stage_idx][(j + 1)][a_tile_index + 64]));
 
-                        FETCH_FLOAT4(frag_b[(j + 1) & 1][0]) = FETCH_FLOAT4(Bs[load_stage_idx][(j + 1)][b_tile_index]);
-                        FETCH_FLOAT4(frag_b[(j + 1) & 1][4]) = FETCH_FLOAT4(Bs[load_stage_idx][(j + 1)][b_tile_index + 64]);
+                        thread::store<Config::StoreModifer,float4>(&frag_b[(j + 1) & 1][0], thread::load<Config::LoadModifer,float4>(&Bs[load_stage_idx][(j + 1)][b_tile_index]));
+                        thread::store<Config::StoreModifer,float4>(&frag_b[(j + 1) & 1][4], thread::load<Config::LoadModifer,float4>(&Bs[load_stage_idx][(j + 1)][b_tile_index + 64]));
 
                         const int k_cur = tile_base + (j + 1);
 
@@ -1463,8 +1465,7 @@ namespace propr {
 
                                 const float old_mu = mu[thread_y][thread_x];
                                 mu[thread_y][thread_x] = old_mu + (xval - old_mu) / (float)k_cur;
-                                S [thread_y][thread_x] = S[thread_y][thread_x]
-                                                    + (xval - mu[thread_y][thread_x]) * (xval - old_mu);
+                                S [thread_y][thread_x] = S[thread_y][thread_x] + (xval - mu[thread_y][thread_x]) * (xval - old_mu);
                             }
                         }
                     }
@@ -1484,7 +1485,7 @@ namespace propr {
                         for (int i = 0; i < Config::BLK_K; i += B_TILE_ROW_STRIDE) {
                             const int l     = (i / B_TILE_ROW_STRIDE) * 4;
                             const int row_k = B_TILE_ROW_START + i;
-                            FETCH_FLOAT4(Bs[write_stage_idx][row_k][B_TILE_COL]) = FETCH_FLOAT4(ldg_b_reg[l]);
+                            thread::store<Config::StoreModifer,float4>(&Bs[write_stage_idx][row_k][B_TILE_COL], thread::load<Config::LoadModifer,float4>(&ldg_b_reg[l]));
                         }
                         __syncthreads();
                         write_stage_idx ^= 1;
@@ -1510,11 +1511,11 @@ namespace propr {
                     }
 
                     if (tile_idx < K) {
-                        FETCH_FLOAT4(frag_a[0][0]) = FETCH_FLOAT4(As[(write_stage_idx ^ 1)][0][a_tile_index]);
-                        FETCH_FLOAT4(frag_a[0][4]) = FETCH_FLOAT4(As[(write_stage_idx ^ 1)][0][a_tile_index + 64]);
+                        thread::store<Config::StoreModifer,float4>(&frag_a[0][0], thread::load<Config::LoadModifer,float4>(&As[(write_stage_idx ^ 1)][0][a_tile_index]));
+                        thread::store<Config::StoreModifer,float4>(&frag_a[0][4], thread::load<Config::LoadModifer,float4>(&As[(write_stage_idx ^ 1)][0][a_tile_index + 64]));
 
-                        FETCH_FLOAT4(frag_b[0][0]) = FETCH_FLOAT4(Bs[(write_stage_idx ^ 1)][0][b_tile_index]);
-                        FETCH_FLOAT4(frag_b[0][4]) = FETCH_FLOAT4(Bs[(write_stage_idx ^ 1)][0][b_tile_index + 64]);
+                        thread::store<Config::StoreModifer,float4>(&frag_b[0][0], thread::load<Config::LoadModifer,float4>(&Bs[(write_stage_idx ^ 1)][0][b_tile_index]));
+                        thread::store<Config::StoreModifer,float4>(&frag_b[0][4], thread::load<Config::LoadModifer,float4>(&Bs[(write_stage_idx ^ 1)][0][b_tile_index + 64]));
                     }
                 } while (tile_idx < K);
 
@@ -1530,6 +1531,7 @@ namespace propr {
                     store_if_in_bounds(r0 + i,      c0 + 1,       S[i][1]    / denom);
                     store_if_in_bounds(r0 + i,      c0 + 2,       S[i][2]    / denom);
                     store_if_in_bounds(r0 + i,      c0 + 3,       S[i][3]    / denom);
+
                     store_if_in_bounds(r0 + i,      c0 + 64 + 0,  S[i][4]    / denom);
                     store_if_in_bounds(r0 + i,      c0 + 64 + 1,  S[i][5]    / denom);
                     store_if_in_bounds(r0 + i,      c0 + 64 + 2,  S[i][6]    / denom);
@@ -1539,6 +1541,7 @@ namespace propr {
                     store_if_in_bounds(r0 + 64 + i, c0 + 1,       S[i + 4][1] / denom);
                     store_if_in_bounds(r0 + 64 + i, c0 + 2,       S[i + 4][2] / denom);
                     store_if_in_bounds(r0 + 64 + i, c0 + 3,       S[i + 4][3] / denom);
+                    
                     store_if_in_bounds(r0 + 64 + i, c0 + 64 + 0,  S[i + 4][4] / denom);
                     store_if_in_bounds(r0 + 64 + i, c0 + 64 + 1,  S[i + 4][5] / denom);
                     store_if_in_bounds(r0 + 64 + i, c0 + 64 + 2,  S[i + 4][6] / denom);
@@ -1554,7 +1557,7 @@ namespace propr {
                     const float* __restrict__   lr, offset_t  lr_stride,
                     int rows, int cols) {
                 
-                static_assert((Config::BLK_K % 4)             == 0, "Config::BLK_K must be multiple of 4 (float4 gmem loads).");
+                static_assert((Config::BLK_K % 4)            == 0, "Config::BLK_K must be multiple of 4 (float4 gmem loads).");
                 static_assert((Config::BLK_M % Config::TH_Y) == 0, "Config::BLK_M % Config::TH_Y == 0");
                 static_assert((Config::BLK_M % Config::TH_X) == 0, "Config::BLK_M % Config::TH_X == 0");
 
@@ -1654,10 +1657,10 @@ namespace propr {
                         const int k2    = A_TILE_COL + 2;
                         const int k3    = A_TILE_COL + 3;
 
-                        LR_A[k0][row_m] = ld_or_zero(LR_A_base, row_m, tile_base + k0, lr_stride, M, M);
-                        LR_A[k1][row_m] = ld_or_zero(LR_A_base, row_m, tile_base + k1, lr_stride, M, M);
-                        LR_A[k2][row_m] = ld_or_zero(LR_A_base, row_m, tile_base + k2, lr_stride, M, M);
-                        LR_A[k3][row_m] = ld_or_zero(LR_A_base, row_m, tile_base + k3, lr_stride, M, M);
+                        LR_A[k0][row_m] = ld_or_zero(LR_A_base, row_m, tile_base + k0, lr_stride, M, K);
+                        LR_A[k1][row_m] = ld_or_zero(LR_A_base, row_m, tile_base + k1, lr_stride, M, K);
+                        LR_A[k2][row_m] = ld_or_zero(LR_A_base, row_m, tile_base + k2, lr_stride, M, K);
+                        LR_A[k3][row_m] = ld_or_zero(LR_A_base, row_m, tile_base + k3, lr_stride, M, K);
 
                         As[k0][row_m] = ld_or_zero_lg(A_base, row_m, tile_base + k0, x_stride, M, K);
                         As[k1][row_m] = ld_or_zero_lg(A_base, row_m, tile_base + k1, x_stride, M, K);
@@ -1671,10 +1674,10 @@ namespace propr {
                         const int row_k_abs   = tile_base + row_k_local;
                         const int col_m       = B_TILE_COL;
 
-                        LR_B[row_k_local][col_m + 0] = ld_or_zero(LR_B_base, col_m + 0, row_k_abs, lr_stride, M, M);
-                        LR_B[row_k_local][col_m + 1] = ld_or_zero(LR_B_base, col_m + 1, row_k_abs, lr_stride, M, M);
-                        LR_B[row_k_local][col_m + 2] = ld_or_zero(LR_B_base, col_m + 2, row_k_abs, lr_stride, M, M);
-                        LR_B[row_k_local][col_m + 3] = ld_or_zero(LR_B_base, col_m + 3, row_k_abs, lr_stride, M, M);
+                        LR_B[row_k_local][col_m + 0] = ld_or_zero(LR_B_base, col_m + 0, row_k_abs, lr_stride, M, K);
+                        LR_B[row_k_local][col_m + 1] = ld_or_zero(LR_B_base, col_m + 1, row_k_abs, lr_stride, M, K);
+                        LR_B[row_k_local][col_m + 2] = ld_or_zero(LR_B_base, col_m + 2, row_k_abs, lr_stride, M, K);
+                        LR_B[row_k_local][col_m + 3] = ld_or_zero(LR_B_base, col_m + 3, row_k_abs, lr_stride, M, K);
 
                         Bs[row_k_local][col_m + 0] = ld_or_zero_lg(B_base, col_m + 0, row_k_abs, x_stride, M, K);
                         Bs[row_k_local][col_m + 1] = ld_or_zero_lg(B_base, col_m + 1, row_k_abs, x_stride, M, K);
@@ -1684,34 +1687,34 @@ namespace propr {
                     __syncthreads();
 
                     if (k_tile > 0) {
-                        FETCH_FLOAT4(frag_xi[0][0]) = FETCH_FLOAT4(As[0][a_tile_index]);
-                        FETCH_FLOAT4(frag_xi[0][4]) = FETCH_FLOAT4(As[0][a_tile_index + 64]);
+                        thread::store<Config::StoreModifer,float4>(&frag_xi[0][0], thread::load<Config::LoadModifer,float4>(&As[0][a_tile_index]));
+                        thread::store<Config::StoreModifer,float4>(&frag_xi[0][4], thread::load<Config::LoadModifer,float4>(&As[0][a_tile_index + 64]));
 
-                        FETCH_FLOAT4(frag_xj[0][0]) = FETCH_FLOAT4(Bs[0][b_tile_index]);
-                        FETCH_FLOAT4(frag_xj[0][4]) = FETCH_FLOAT4(Bs[0][b_tile_index + 64]);
+                        thread::store<Config::StoreModifer,float4>(&frag_xj[0][0], thread::load<Config::LoadModifer,float4>(&Bs[0][b_tile_index]));
+                        thread::store<Config::StoreModifer,float4>(&frag_xj[0][4], thread::load<Config::LoadModifer,float4>(&Bs[0][b_tile_index + 64]));
 
-                        FETCH_FLOAT4(frag_lr_i[0][0]) = FETCH_FLOAT4(LR_A[0][a_tile_index]);
-                        FETCH_FLOAT4(frag_lr_i[0][4]) = FETCH_FLOAT4(LR_A[0][a_tile_index + 64]);
+                        thread::store<Config::StoreModifer,float4>(&frag_lr_i[0][0], thread::load<Config::LoadModifer,float4>(&LR_A[0][a_tile_index]));
+                        thread::store<Config::StoreModifer,float4>(&frag_lr_i[0][4], thread::load<Config::LoadModifer,float4>(&LR_A[0][a_tile_index + 64]));
 
-                        FETCH_FLOAT4(frag_lr_j[0][0]) = FETCH_FLOAT4(LR_B[0][b_tile_index]);
-                        FETCH_FLOAT4(frag_lr_j[0][4]) = FETCH_FLOAT4(LR_B[0][b_tile_index + 64]);
+                        thread::store<Config::StoreModifer,float4>(&frag_lr_j[0][0], thread::load<Config::LoadModifer,float4>(&LR_B[0][b_tile_index]));
+                        thread::store<Config::StoreModifer,float4>(&frag_lr_j[0][4], thread::load<Config::LoadModifer,float4>(&LR_B[0][b_tile_index + 64]));
                     }
 
                     const int j_max = (k_tile > 0 ? k_tile - 1 : 0);
 
                     PROPR_UNROLL
                     for (int j = 0; j < j_max; ++j) {
-                        FETCH_FLOAT4(frag_xi[(j + 1) & 1][0]) = FETCH_FLOAT4(As[j + 1][a_tile_index]);
-                        FETCH_FLOAT4(frag_xi[(j + 1) & 1][4]) = FETCH_FLOAT4(As[j + 1][a_tile_index + 64]);
+                        thread::store<Config::StoreModifer,float4>(&frag_xi[(j + 1) & 1][0], thread::load<Config::LoadModifer,float4>(&As[j + 1][a_tile_index]));
+                        thread::store<Config::StoreModifer,float4>(&frag_xi[(j + 1) & 1][4], thread::load<Config::LoadModifer,float4>(&As[j + 1][a_tile_index + 64]));
 
-                        FETCH_FLOAT4(frag_xj[(j + 1) & 1][0]) = FETCH_FLOAT4(Bs[j + 1][b_tile_index]);
-                        FETCH_FLOAT4(frag_xj[(j + 1) & 1][4]) = FETCH_FLOAT4(Bs[j + 1][b_tile_index + 64]);
+                        thread::store<Config::StoreModifer,float4>(&frag_xj[(j + 1) & 1][0], thread::load<Config::LoadModifer,float4>(&Bs[j + 1][b_tile_index]));
+                        thread::store<Config::StoreModifer,float4>(&frag_xj[(j + 1) & 1][4], thread::load<Config::LoadModifer,float4>(&Bs[j + 1][b_tile_index + 64]));
 
-                        FETCH_FLOAT4(frag_lr_i[(j + 1) & 1][0]) = FETCH_FLOAT4(LR_A[j + 1][a_tile_index]);
-                        FETCH_FLOAT4(frag_lr_i[(j + 1) & 1][4]) = FETCH_FLOAT4(LR_A[j + 1][a_tile_index + 64]);
+                        thread::store<Config::StoreModifer,float4>(&frag_lr_i[(j + 1) & 1][0], thread::load<Config::LoadModifer,float4>(&LR_A[j + 1][a_tile_index]));
+                        thread::store<Config::StoreModifer,float4>(&frag_lr_i[(j + 1) & 1][4], thread::load<Config::LoadModifer,float4>(&LR_A[j + 1][a_tile_index + 64]));
 
-                        FETCH_FLOAT4(frag_lr_j[(j + 1) & 1][0]) = FETCH_FLOAT4(LR_B[j + 1][b_tile_index]);
-                        FETCH_FLOAT4(frag_lr_j[(j + 1) & 1][4]) = FETCH_FLOAT4(LR_B[j + 1][b_tile_index + 64]);
+                        thread::store<Config::StoreModifer,float4>(&frag_lr_j[(j + 1) & 1][0], thread::load<Config::LoadModifer,float4>(&LR_B[j + 1][b_tile_index]));
+                        thread::store<Config::StoreModifer,float4>(&frag_lr_j[(j + 1) & 1][4], thread::load<Config::LoadModifer,float4>(&LR_B[j + 1][b_tile_index + 64]));
 
                         const int k_cur = tile_base + (j + 1);
 
@@ -1973,10 +1976,10 @@ namespace propr {
                 }
                 __syncthreads();
 
-                FETCH_FLOAT4(frag_a[0][0]) = FETCH_FLOAT4(As[0][0][a_tile_index]);
-                FETCH_FLOAT4(frag_a[0][4]) = FETCH_FLOAT4(As[0][0][a_tile_index + 64]);
-                FETCH_FLOAT4(frag_b[0][0]) = FETCH_FLOAT4(Bs[0][0][b_tile_index]);
-                FETCH_FLOAT4(frag_b[0][4]) = FETCH_FLOAT4(Bs[0][0][b_tile_index + 64]);
+                thread::store<Config::StoreModifer,float4>(&frag_a[0][0], thread::load<Config::LoadModifer,float4>(&As[0][0][a_tile_index]));
+                thread::store<Config::StoreModifer,float4>(&frag_a[0][4], thread::load<Config::LoadModifer,float4>(&As[0][0][a_tile_index + 64]));
+                thread::store<Config::StoreModifer,float4>(&frag_b[0][0], thread::load<Config::LoadModifer,float4>(&Bs[0][0][b_tile_index]));
+                thread::store<Config::StoreModifer,float4>(&frag_b[0][4], thread::load<Config::LoadModifer,float4>(&Bs[0][0][b_tile_index + 64]));
 
                 int write_stage_idx = 1;
                 int tile_idx = 0;
@@ -2015,10 +2018,10 @@ namespace propr {
 
                     PROPR_UNROLL
                     for (int j = 0; j < j_max; ++j) {
-                        FETCH_FLOAT4(frag_a[(j + 1) & 1][0]) = FETCH_FLOAT4(As[load_stage_idx][(j + 1)][a_tile_index]);
-                        FETCH_FLOAT4(frag_a[(j + 1) & 1][4]) = FETCH_FLOAT4(As[load_stage_idx][(j + 1)][a_tile_index + 64]);
-                        FETCH_FLOAT4(frag_b[(j + 1) & 1][0]) = FETCH_FLOAT4(Bs[load_stage_idx][(j + 1)][b_tile_index]);
-                        FETCH_FLOAT4(frag_b[(j + 1) & 1][4]) = FETCH_FLOAT4(Bs[load_stage_idx][(j + 1)][b_tile_index + 64]);
+                        thread::store<Config::StoreModifer,float4>(&frag_a[(j + 1) & 1][0], thread::load<Config::LoadModifer,float4>(&As[load_stage_idx][(j + 1)][a_tile_index]));
+                        thread::store<Config::StoreModifer,float4>(&frag_a[(j + 1) & 1][4], thread::load<Config::LoadModifer,float4>(&As[load_stage_idx][(j + 1)][a_tile_index + 64]));
+                        thread::store<Config::StoreModifer,float4>(&frag_b[(j + 1) & 1][0], thread::load<Config::LoadModifer,float4>(&Bs[load_stage_idx][(j + 1)][b_tile_index]));
+                        thread::store<Config::StoreModifer,float4>(&frag_b[(j + 1) & 1][4], thread::load<Config::LoadModifer,float4>(&Bs[load_stage_idx][(j + 1)][b_tile_index + 64]));
 
                         const float n = float(tile_base + (j + 1));
 
@@ -2063,7 +2066,7 @@ namespace propr {
                         for (int i = 0; i < Config::BLK_K; i += B_TILE_ROW_STRIDE) {
                             const int l = (i / B_TILE_ROW_STRIDE) * 4;
                             const int row_k = B_TILE_ROW_START + i;
-                            FETCH_FLOAT4(Bs[write_stage_idx][row_k][B_TILE_COL]) = FETCH_FLOAT4(ldg_b_reg[l]);
+                            thread::store<Config::StoreModifer,float4>(&Bs[write_stage_idx][row_k][B_TILE_COL], thread::load<Config::LoadModifer,float4>(&ldg_b_reg[l]));
                         }
                         __syncthreads();
                         write_stage_idx ^= 1;
@@ -2099,10 +2102,10 @@ namespace propr {
                     }
 
                     if (tile_idx < K) {
-                        FETCH_FLOAT4(frag_a[0][0]) = FETCH_FLOAT4(As[(write_stage_idx ^ 1)][0][a_tile_index]);
-                        FETCH_FLOAT4(frag_a[0][4]) = FETCH_FLOAT4(As[(write_stage_idx ^ 1)][0][a_tile_index + 64]);
-                        FETCH_FLOAT4(frag_b[0][0]) = FETCH_FLOAT4(Bs[(write_stage_idx ^ 1)][0][b_tile_index]);
-                        FETCH_FLOAT4(frag_b[0][4]) = FETCH_FLOAT4(Bs[(write_stage_idx ^ 1)][0][b_tile_index + 64]);
+                        thread::store<Config::StoreModifer,float4>(&frag_a[0][0], thread::load<Config::LoadModifer,float4>(&As[(write_stage_idx ^ 1)][0][a_tile_index]));
+                        thread::store<Config::StoreModifer,float4>(&frag_a[0][4], thread::load<Config::LoadModifer,float4>(&As[(write_stage_idx ^ 1)][0][a_tile_index + 64]));
+                        thread::store<Config::StoreModifer,float4>(&frag_b[0][0], thread::load<Config::LoadModifer,float4>(&Bs[(write_stage_idx ^ 1)][0][b_tile_index]));
+                        thread::store<Config::StoreModifer,float4>(&frag_b[0][4], thread::load<Config::LoadModifer,float4>(&Bs[(write_stage_idx ^ 1)][0][b_tile_index + 64]));
                     }
                 } while (tile_idx < K);
 

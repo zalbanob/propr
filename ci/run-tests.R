@@ -24,7 +24,7 @@ message("Installing package dependencies (cached in .r-lib)...")
 remotes::install_deps(dependencies = TRUE, upgrade = "never")
 
 message("Installing 'propr' from local source ...")
-# remotes::install_local(start_wd, upgrade = "never", force = TRUE)
+# <<<<< remotes::install_local(start_wd, upgrade = "never", force = TRUE)
 install.packages(start_wd, repos = NULL, type = "source")
 
 
