@@ -54,7 +54,7 @@ updateCutoffs_old <- function(object, cutoff, ncores=1){
   p <- length(object@permutes)
 
   if(ncores > 1){
-
+    skip(message="WARN:Skipping cannot run on local CI")
     packageCheck("parallel")
 
     # Set up the cluster and require propr
@@ -123,7 +123,7 @@ updateCutoffs_old <- function(object, cutoff, ncores=1){
 test_that("updateCutoffs_old and updateCutoffs.propr agree - rho", {
 
   # get propr object and update cutoffs
-  pr <- propr(X, metric = "rho", p=10)
+  pr <- propr(X, metric = "rho", p=10, permutation_option = "sample-wise")
   set.seed(0)
   pr <- updateCutoffs(pr, number_of_cutoffs=10)
   set.seed(0)
@@ -136,7 +136,7 @@ test_that("updateCutoffs_old and updateCutoffs.propr agree - rho", {
 test_that("updateCutoffs_old and updateCutoffs.propr agree - phi", {
 
   # get propr object and update cutoffs
-  pr <- propr(X, metric = "phi", p=10)
+  pr <- propr(X, metric = "phi", p=10, permutation_option = "sample-wise")
   set.seed(0)
   pr <- updateCutoffs(pr, number_of_cutoffs=10)
   set.seed(0)
@@ -149,7 +149,7 @@ test_that("updateCutoffs_old and updateCutoffs.propr agree - phi", {
 test_that("updateCutoffs_old and updateCutoffs.propr agree - cor", {
 
   # get propr object and update cutoffs
-  pr <- propr(X, metric = "cor", p=10)
+  pr <- propr(X, metric = "cor", p=10, permutation_option = "sample-wise")
   set.seed(0)
   pr <- updateCutoffs(pr, number_of_cutoffs=10, tails="right")
   set.seed(0)
@@ -265,7 +265,6 @@ test_that("updateCutoffs.propr is reproducible when seed is set", {
 
 test_that("updateCutoffs.propr works when ncores > 1", {
     skip(message="WARN:Skipping cannot run on local CI")
-
     # get propr object and update cutoffs
     set.seed(0)
     pr1 <- propr(X, metric = "pcor.bshrink", p=10)
