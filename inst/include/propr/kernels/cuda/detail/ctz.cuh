@@ -4,6 +4,7 @@
 #include <cuda_runtime.h>
 
 #include <propr/utils/constants.h>
+#include <propr/data/types.h>
 
 
 

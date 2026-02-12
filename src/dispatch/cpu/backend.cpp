@@ -1,7 +1,5 @@
 #include <Rcpp.h>
-
 #include <math.h>
-#include <iostream>
 
 #include <propr/kernels/cpu/dispatch/backend.hpp>
 

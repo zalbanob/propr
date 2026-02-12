@@ -35,7 +35,7 @@ namespace propr {
                      float * __restrict__ w,
                      int n){
                 static_assert(IS_POWER_OF_2(BLK_X), "BLK_X must be a power of 2");
-                using block_reduce_t = cub::BlockReduce<float2, BLK_X>;
+                using block_reduce_t        = cub::BlockReduce<float2, BLK_X>;
                 using block_scan_storage_t  = typename block_reduce_t::TempStorage;
                 
                 __shared__ block_scan_storage_t partials;
@@ -328,7 +328,7 @@ namespace propr {
 
                 float* A = x;
                 float* B = x;
-                    float* C = out;
+                float* C = out;
                 
                 const int bx = blockIdx.x;
                 const int by = blockIdx.y;
