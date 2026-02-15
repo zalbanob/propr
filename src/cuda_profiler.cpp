@@ -1,7 +1,7 @@
 #include <Rcpp.h>
 #include <cuda_runtime.h>
 
-#include <propr/utils/cuda_profiler.cuh>
+#include <propr/utils/profilers/cuda_profiler.cuh>
 
 #include <atomic>
 #include <mutex>

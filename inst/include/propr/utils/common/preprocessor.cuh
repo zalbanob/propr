@@ -27,4 +27,6 @@
 #endif  
 
 
+#define PROPR_NO_DISCARD [[nodiscard]]
+
 #define OFFSET(row, col, ld) ((row) * (ld) + (col))

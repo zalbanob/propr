@@ -6,7 +6,7 @@
 
 #include <propr/kernels/cpu/dispatch/omega.hpp>
 #include <propr/kernels/cuda/dispatch/omega.cuh>
-#include <propr/utils/rcpp_helpers.h>
+#include <propr/utils/rcpp/rcpp_helpers.h>
 
 
 using namespace propr;

@@ -12,13 +12,14 @@ file(GLOB SRC_ROOT_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/*.cu"
 )
 
+
 set(ALL_PROPR_SOURCES ${SRC_ROOT_FILES} ${PROPR_SOURCES})
 add_library(propr SHARED ${ALL_PROPR_SOURCES})
 target_link_libraries(propr  ${LIBS} CUDA::cublas CUDA::cudart)
-target_include_directories(propr
-        PRIVATE
-        ${CMAKE_SOURCE_DIR}/thirdparty/cutlass/include
-)
+# target_include_directories(propr
+#         PRIVATE
+#         ${CMAKE_SOURCE_DIR}/thirdparty/cutlass/include
+# )
 
 if (PROPR_BUILD_TESTS)
     target_link_libraries(propr Testthat::Testthat)

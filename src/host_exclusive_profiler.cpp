@@ -1,4 +1,4 @@
-#include <propr/utils/host_exclusive_profiler.hpp>
+#include <propr/utils/profilers/host_exclusive_profiler.hpp>
 
 #include <atomic>
 

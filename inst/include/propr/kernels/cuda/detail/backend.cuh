@@ -6,8 +6,8 @@
 #include <cub/cub.cuh>
 
 #include <propr/data/types.h>
-#include <propr/utils/constants.h>
-#include <propr/utils/preprocessor.cuh>
+#include <propr/utils/common/constants.h>
+#include <propr/utils/common/preprocessor.cuh>
 #include <propr/internal/device/cuda/thread/mem_ops.cuh>
 
 
@@ -149,7 +149,7 @@ namespace propr {
                     const int tx = threadIdx.x % BLK_X;
                     const int ty = threadIdx.x / BLK_X;
 
-                    const int lane = tx & (PROPR_WARP_SIZE - 1);
+                    const int lane   = tx % PROPR_WARP_SIZE;
                     const int warp_x = tx / PROPR_WARP_SIZE;
 
                     // shared memory holds one partial per warp per col

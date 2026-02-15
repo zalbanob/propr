@@ -3,7 +3,7 @@
 #include <cub/cub.cuh>
 #include <cuda_runtime.h>
 
-#include <propr/utils/preprocessor.cuh>
+#include <propr/utils/common/preprocessor.cuh>
 #include <propr/internal/device/cuda/thread/mem_ops.cuh>
 
 
