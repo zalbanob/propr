@@ -2,6 +2,8 @@
 
 #include <cuda_runtime.h>
 #include <cub/cub.cuh>
+#include <cooperative_groups.h>
+
 #include <limits>
 #include <climits> 
 
@@ -218,48 +220,129 @@ namespace propr {
             }
 
             template <typename T>
-            __device__ T find_pattern(
-                T *smem_flag_val, // shared [2] : [0]=flag, [1]=value
+            __device__ void count_radix_contiguous(
+                int counts[RADIX_SIZE],
+                int *smem_counts, // shared [RADIX_SIZE]
+                unsigned_type_t<T> desired,
+                unsigned_type_t<T> desired_mask,
+                int digit_pos,
+                int num_values,
+                const T *__restrict__ values)
+            {
+                using RadixT = unsigned_type_t<T>;
+
+                PROPR_UNROLL
+                for (int d = 0; d < RADIX_SIZE; ++d) counts[d] = 0;
+
+                if (threadIdx.x < RADIX_SIZE) smem_counts[threadIdx.x] = 0;
+                __syncthreads();
+
+                int iters = propr::round_up(num_values, int(blockDim.x));
+                for (int pos = threadIdx.x; pos < iters; pos += blockDim.x) {
+                    bool in_range = (pos < num_values);
+                    T v = in_range ? values[pos] : T(0);
+                    RadixT rv = propr::radix::radix_convert(v);
+                    bool has_val = in_range && ((rv & desired_mask) == desired);
+                    if (!has_val) continue;
+                    RadixT digit = get_bitfield<RadixT>(rv, digit_pos, RADIX_BITS);
+                    counts[static_cast<int>(digit)] += 1;
+                }
+
+                int lane = threadIdx.x % PROPR_WARP_SIZE;
+
+                PROPR_UNROLL
+                for (int d = 0; d < RADIX_SIZE; ++d) {
+                    int v = propr::cuda::internal::warp::warp_reduce(counts[d], propr::ReduceSum<int>{});
+                    if (lane == 0) atomicAdd(&smem_counts[d], v);
+                }
+
+                __syncthreads();
+                PROPR_UNROLL
+                for (int d = 0; d < RADIX_SIZE; ++d) counts[d] = smem_counts[d];
+                __syncthreads();
+            }
+
+            template <typename T>
+            __device__ int compact_masked_bucket_to_shared(
+                T *cache,
+                int cache_cap,
+                int *s_out_ptr, // shared scalar
                 int num_edges,
                 int gene_id,
                 int num_genes,
                 const T *__restrict__ theta_edges,
                 unsigned_type_t<T> desired,
-                unsigned_type_t<T> desired_mask) {
-                if (threadIdx.x < 2) smem_flag_val[threadIdx.x] = T(0);
+                unsigned_type_t<T> desired_mask)
+            {
+                using RadixT = unsigned_type_t<T>;
+
+                if (threadIdx.x == 0) *s_out_ptr = 0;
                 __syncthreads();
+
+                // int lane = threadIdx.x & (PROPR_WARP_SIZE - 1);
+                // int iters = propr::round_up(num_edges, int(blockDim.x));
+
+                // for (int pos = threadIdx.x; pos < iters; pos += blockDim.x) {
+                //     bool in_range = (pos < num_edges);
+                //     T fv       = in_range ? load_theta_incident<T>(gene_id, pos, num_genes, theta_edges) : T(0);
+                //     RadixT rv  = propr::radix::radix_convert(fv);
+                //     bool match = in_range && ((rv & desired_mask) == desired);
+
+                //     unsigned active = __activemask();               // for the warps that are active 
+                //     unsigned ballot = __ballot_sync(active, match); //  - how many have numbers that match the mask
+                //     int n = __popc(ballot);                         // count them: total number of matches in this warp.
+                //     unsigned lane_mask_lt = (lane == 0) ? 0u : ((1u << lane) - 1u);
+                //     // compute the rank of the thread from the set of active warps
+                //     int rank = __popc(ballot & lane_mask_lt);
+                //     int base = 0;
+                //     if (lane == 0 && n > 0) base = atomicAdd(s_out_ptr, n); // allocate space in the smem cache
+                //     base = __shfl_sync(active, base, 0);  //  broadcast lane 0's base to all active lanes
+                //     if (match) {
+                //         int idx = base + rank;
+                //         if (idx < cache_cap) cache[idx] = fv;
+                //     }
+                // }
 
                 int iters = propr::round_up(num_edges, int(blockDim.x));
                 for (int pos = threadIdx.x; pos < iters; pos += blockDim.x) {
                     bool in_range = (pos < num_edges);
-                    T v = in_range ? load_theta_incident<T>(gene_id, pos, num_genes, theta_edges) : T(0);
-                    if (in_range && ((radix::radix_convert(v) & desired_mask) == desired)) {
-                            smem_flag_val[0] = T(1);
-                            smem_flag_val[1] = v;
+                    T fv       = in_range ? load_theta_incident<T>(gene_id, pos, num_genes, theta_edges) : T(0);
+                    RadixT rv  = propr::radix::radix_convert(fv);
+                    bool match = in_range && ((rv & desired_mask) == desired);
+
+                    if (match) {
+                        auto grp  = cooperative_groups::coalesced_threads();
+                        int  n    = grp.size();
+                        int  rank = grp.thread_rank();
+                        int  base;
+                        if (rank == 0) base = atomicAdd(s_out_ptr, n);
+                        base = grp.shfl(base, 0);
+                        int idx = base + rank;
+                        if (idx < cache_cap) cache[idx] = fv;
                     }
-                    __syncthreads();
-                    T found = smem_flag_val[0];
-                    T val   = smem_flag_val[1];
-                    __syncthreads();
-                    if (found != T(0)) return val;
                 }
 
-                return std::numeric_limits<T>::quiet_NaN();
+                __syncthreads();
+                int out = *s_out_ptr;
+                __syncthreads();
+                return out;
             }
 
-            template<typename T, bool EARLY_EXIT=false>
+            template<typename T>
             __device__ void radix_select(
                 int k_1based, // 1-based
                 int num_edges,
                 int gene_id,
                 int num_genes,
-                int   *smem_counts,   // shared [RADIX_SIZE]
-                T *smem_flag_val, // shared [2]
-                T *smem_sum,      // shared scalar
+                int *smem_counts, // shared [RADIX_SIZE]
+                T *smem_sum, // shared scalar
+                T *cache, // dynamic shared cache
+                int cache_cap,
+                int *s_compact_out, // shared scalar
                 const T *__restrict__ theta_edges,
                 T *median_val,
-                T *theta_sum) {
-                
+                T *theta_sum)
+            {
                 using RadixT = unsigned_type_t<T>;
                 constexpr int RADIX_TOTAL_BITS = static_cast<int>(sizeof(RadixT) * 8);
 
@@ -268,59 +351,49 @@ namespace propr {
                 RadixT desired_mask = RadixT(0);
                 int k_to_find = k_1based;
 
-                bool first = true;
-               
+                bool use_cache = false;
+                int cache_n = 0;
+                int digit_index = 0;
+
                 for (int digit_pos = RADIX_TOTAL_BITS - RADIX_BITS; digit_pos >= 0; digit_pos -= RADIX_BITS) {
-                    count_radix_using_mask<T>(
-                        counts, smem_counts, desired, desired_mask,
-                        digit_pos, num_edges, gene_id, num_genes, theta_edges,
-                        smem_sum, /*compute_sum=*/first);
-
-                    if (first) {
-                        if (threadIdx.x == 0) *theta_sum = *smem_sum; // sum over ALL theta values
-                        first = false;
-                    }
-
-                    if constexpr (EARLY_EXIT) {
-                        auto found_unique = [&](int digit, int count) -> bool {
-                            if (count == 1 && k_to_find == 1) {
-                                desired      = set_bitfield<RadixT>(desired, static_cast<RadixT>(digit), digit_pos, RADIX_BITS);
-                                desired_mask = set_bitfield<RadixT>(desired_mask, static_cast<RadixT>(RADIX_MASK), digit_pos, RADIX_BITS);
-                                *median_val = find_pattern<T>(smem_flag_val, num_edges, gene_id, num_genes, theta_edges, desired, desired_mask);
-                                return true;
-                            }
-                            return false;
-                        };
-                        auto found_non_unique = [&](int digit, int count) -> bool {
-                            if (count >= k_to_find) {
-                                desired      = set_bitfield<RadixT>(desired, static_cast<RadixT>(digit), digit_pos, RADIX_BITS);
-                                desired_mask = set_bitfield<RadixT>(desired_mask, static_cast<RadixT>(RADIX_MASK), digit_pos, RADIX_BITS);
-                                return true;
-                            }
-                            k_to_find -= count;
-                            return false;
-                        };
-                        // k-th smallest
-                        PROPR_UNROLL
-                        for (int d = 0; d < RADIX_SIZE; ++d) {
-                            int c = counts[d];
-                            if (found_unique(d, c)) return;
-                            if (found_non_unique(d, c)) break;
-                        }
+                    if (!use_cache) {
+                        //we only compute the sum on the first pass
+                        bool compute_sum = (digit_pos == RADIX_TOTAL_BITS - RADIX_BITS);
+                        count_radix_using_mask<T>( counts, smem_counts, desired, desired_mask, 
+                                                   digit_pos, 
+                                                   num_edges, gene_id, num_genes, 
+                                                   theta_edges, smem_sum, /*compute_sum=*/compute_sum);
+                        if (compute_sum && threadIdx.x == 0) *theta_sum = *smem_sum;
                     } else {
-                        PROPR_UNROLL
-                        for (int d = 0; d < RADIX_SIZE; ++d) {
-                            int c = counts[d];
-                            if (c >= k_to_find) {
-                                desired      = set_bitfield<RadixT>(desired, static_cast<RadixT>(d), digit_pos, RADIX_BITS);
-                                desired_mask = set_bitfield<RadixT>(desired_mask, static_cast<RadixT>(RADIX_MASK), digit_pos, RADIX_BITS);
-                                break;
-                            }
-                            k_to_find -= c;
-                        }
+                        count_radix_contiguous<T>( counts, smem_counts, desired, desired_mask,digit_pos, cache_n, cache);
                     }
 
+                    int chosen_digit = 0;
+                    PROPR_UNROLL
+                    for (int d = 0; d < RADIX_SIZE; ++d) {
+                        int count = counts[d];
+                        if (ccount >= k_to_find) {
+                            chosen_digit = d;
+                            break;
+                        }
+                        k_to_find -= count;
+                    }
+
+                    desired      = set_bitfield<RadixT>(desired, static_cast<RadixT>(chosen_digit), digit_pos, RADIX_BITS);
+                    desired_mask = set_bitfield<RadixT>(desired_mask, static_cast<RadixT>(RADIX_MASK), digit_pos, RADIX_BITS);
+
+                    if (!use_cache && digit_index == 0) {
+                        int bucket_count = counts[chosen_digit];
+                        if (bucket_count > 0 && bucket_count <= cache_cap && cache_cap > 0) {
+                            cache_n = compact_masked_bucket_to_shared<T>(cache, cache_cap, s_compact_out,
+                                                                         num_edges, gene_id, num_genes, theta_edges,
+                                                                         desired, desired_mask);
+                            use_cache = (cache_n > 0);
+                        }
+                    }
+                    ++digit_index;
                 }
+
                 *median_val = radix::radix_deconvert<T>(desired);
             }
 
@@ -331,13 +404,17 @@ namespace propr {
                 const T *__restrict__ theta_edges,
                 int num_genes,
                 T *__restrict__ out_mean,
-                T *__restrict__ out_median) {
+                T *__restrict__ out_median,
+                int cache_cap_values = 0) {
                 static_assert(std::is_same_v<T, float> || std::is_same_v<T, double>, "genewise_theta_stats only supports float and double");
 
                 __shared__   int smem_counts[RADIX_SIZE];
-                __shared__ T smem_flag_val[2]; // keep find
                 __shared__ T smem_sum; // sum for first pass
                 __shared__ T sum_all;
+                __shared__ int s_compact_out;
+
+                extern __shared__ unsigned char cache_raw[];
+                T *cache = reinterpret_cast<T *>(cache_raw);
 
                 int gene_id = (int) blockIdx.x;
                 if (gene_id >= num_genes) return;
@@ -345,7 +422,7 @@ namespace propr {
                 int num_edges = num_genes - 1;
                 if (num_edges <= 0) {
                     if (threadIdx.x == 0) {
-                        out_mean[gene_id] = std::numeric_limits<T>::quiet_NaN();
+                        out_mean[gene_id]   = std::numeric_limits<T>::quiet_NaN();
                         out_median[gene_id] = std::numeric_limits<T>::quiet_NaN();
                     }
                     return;
@@ -356,7 +433,8 @@ namespace propr {
 
                 radix_select<T>(
                     k0 + 1, num_edges, gene_id, num_genes,
-                    smem_counts, smem_flag_val, &smem_sum,
+                    smem_counts, &smem_sum,
+                    cache, cache_cap_values, &s_compact_out,
                     theta_edges,
                     &med,
                     &sum_all);
