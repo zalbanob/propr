@@ -2,10 +2,9 @@
 
 #include <propr/runtime/dispatch.hpp>
 
-using namespace propr::runtime;
-
-
 #ifdef PROPR_HAS_CUDA
+
+namespace propr::runtime {
 
     bool cuda_is_available() {
         static int cached = -1;
@@ -21,5 +20,7 @@ using namespace propr::runtime;
         }
         return cached > 0;
     }
+
+}  // namespace propr::runtime
 
 #endif

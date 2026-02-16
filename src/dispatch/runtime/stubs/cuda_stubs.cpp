@@ -2,14 +2,12 @@
 
 #include <propr/runtime/cuda_executor.hpp>
 
-using namespace propr::runtime::cuda_executor;
-
-
 [[noreturn]] 
 static void throw_unavailable() {
     throw std::runtime_error("CUDA backend is not compiled into this build.");
 }
 
+namespace propr::runtime::cuda_executor {
 
 // backend ops
 void wtmRcpp(double&, const Rcpp::NumericVector&, const Rcpp::NumericVector&) { throw_unavailable(); }
@@ -72,3 +70,5 @@ void lr2vlr(Rcpp::NumericMatrix&, Rcpp::NumericMatrix&) { throw_unavailable(); }
 void lr2phi(Rcpp::NumericMatrix&, Rcpp::NumericMatrix&) { throw_unavailable(); }
 void lr2rho(Rcpp::NumericMatrix&, Rcpp::NumericMatrix&) { throw_unavailable(); }
 void lr2phs(Rcpp::NumericMatrix&, Rcpp::NumericMatrix&) { throw_unavailable(); }
+
+}  // namespace propr::runtime::cuda_executor

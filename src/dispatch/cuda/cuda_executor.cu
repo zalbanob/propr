@@ -9,8 +9,7 @@
 #include <propr/kernels/cuda/dispatch/lrv.cuh>
 #include <propr/kernels/cuda/dispatch/omega.cuh>
 
-using namespace propr;
-using namespace propr::runtime::cuda_executor;
+namespace propr::runtime::cuda_executor {
 
 
 void wtmRcpp(double& out, const Rcpp::NumericVector& x, const Rcpp::NumericVector& w) {
@@ -217,3 +216,5 @@ void lr2rho(Rcpp::NumericMatrix& out, Rcpp::NumericMatrix& lr) {
 void lr2phs(Rcpp::NumericMatrix& out, Rcpp::NumericMatrix& lr) {
     dispatch::cuda::lr2phs(out, lr);
 }
+
+}  // namespace propr::runtime::cuda_executor

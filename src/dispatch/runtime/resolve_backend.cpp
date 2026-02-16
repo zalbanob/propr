@@ -3,14 +3,14 @@
 #include <algorithm>
 #include <string>
 
-using namespace propr::runtime;
+namespace propr::runtime {
 
 #ifndef PROPR_HAS_CUDA
 bool cuda_is_available() { return false; }
 #endif
 
 Backend resolve_backend(const Rcpp::String& requested) {
-    std::string req = Rcpp::as<std::string>(requested);
+    std::string req(requested.get_cstring());
     std::transform(req.begin(), req.end(), req.begin(), ::tolower);
 
     if (req == "auto") {
@@ -36,3 +36,5 @@ Backend resolve_backend(const Rcpp::String& requested) {
 
     return Backend::CPU;
 }
+
+}  // namespace propr::runtime
