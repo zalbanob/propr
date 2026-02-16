@@ -5,7 +5,7 @@
 
 namespace propr::runtime {
 
-#ifndef PROPR_HAS_CUDA
+#if !defined(PROPR_HAS_CUDA) || !PROPR_HAS_CUDA
 bool cuda_is_available() { return false; }
 #endif
 

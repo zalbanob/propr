@@ -2,7 +2,7 @@
 
 #include <propr/runtime/dispatch.hpp>
 
-#ifdef PROPR_HAS_CUDA
+#if defined(PROPR_HAS_CUDA) && PROPR_HAS_CUDA
 
 namespace propr::runtime {
 
